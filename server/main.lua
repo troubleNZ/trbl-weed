@@ -188,8 +188,11 @@ QBCore.Functions.CreateUseableItem("weed_ak47_seed", function(source, item)
     TriggerClientEvent('qb-weed:client:placePlant', source, 'ak47', item)
 end)
 
+-- new item
 QBCore.Functions.CreateUseableItem("weed_high-yield_seed", function(source, item)
-    TriggerClientEvent('trbl-weed:client:place-HYH-Plant', source, 'high-yield', item)
+    if QBWeed.AllowHighYieldOutdoorGrows then
+        TriggerClientEvent('trbl-weed:client:place-HYH-Plant', source, 'high-yield', item)
+    end
 end)
 
 QBCore.Functions.CreateUseableItem("weed_nutrition", function(source, item)
@@ -214,18 +217,22 @@ RegisterNetEvent('qb-weed:server:harvestPlant', function(house, amount, plantNam
                 local result = MySQL.query.await(
                     'SELECT * FROM house_plants WHERE plantid = ? AND building = ?', {plantId, house})
                 if result[1] ~= nil then
-                    local chance_ = math.random(1,100)
-                    if chance_ <= 10 then
-                        Player.Functions.AddItem('weed_' .. high-yield .. '_seed', 1)
-                    else
+                    if QBWeed.AllowHighYieldOutdoorGrows then
+                        local chance_ = math.random(1,100)
+                        if chance_ <= 10 then
+                            Player.Functions.AddItem('weed_' .. high-yield .. '_seed', 1)
+                        else
+                            Player.Functions.AddItem('weed_' .. plantName .. '_seed', amount)
+                        end
+                    else 
                         Player.Functions.AddItem('weed_' .. plantName .. '_seed', amount)
                     end
-                    Player.Functions.AddItem('weed_' .. plantName, sndAmount)
-                    Player.Functions.RemoveItem('empty_weed_bag', sndAmount)
-                    MySQL.query('DELETE FROM house_plants WHERE plantid = ? AND building = ?',
-                        {plantId, house})
-                    TriggerClientEvent('QBCore:Notify', src,  Lang:t('text.the_plant_has_been_harvested'), 'success', 3500)
-                    TriggerClientEvent('qb-weed:client:refreshHousePlants', -1, house)
+                        Player.Functions.AddItem('weed_' .. plantName, sndAmount)
+                        Player.Functions.RemoveItem('empty_weed_bag', sndAmount)
+                        MySQL.query('DELETE FROM house_plants WHERE plantid = ? AND building = ?',
+                            {plantId, house})
+                        TriggerClientEvent('QBCore:Notify', src,  Lang:t('text.the_plant_has_been_harvested'), 'success', 3500)
+                        TriggerClientEvent('qb-weed:client:refreshHousePlants', -1, house)
                 else
                     TriggerClientEvent('QBCore:Notify', src, Lang:t('error.this_plant_no_longer_exists'), 'error', 3500)
                 end
