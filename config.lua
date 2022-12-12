@@ -1,6 +1,6 @@
 QBWeed = {}
 QBWeed.HarvestTime = 40 * 1000
-
+QBWeed.AllowHighYieldOutdoorGrows = true
 QBWeed.Plants = {
     ["og-kush"] = {
         ["label"] = "OGKush 2g",
@@ -85,6 +85,22 @@ QBWeed.Plants = {
             ["stage-g"] = "bkr_prop_weed_lrg_01b",
         },
         ["highestStage"] = "stage-g"
+    },
+    ["high-yield"] = {
+        ["label"] = "High-Yield-Hybrid",
+        ["item"] = "brick_HYH",
+        ["stages"] = {
+            ["stage-a"] = "bkr_prop_weed_01_small_01c",
+            ["stage-b"] = "bkr_prop_weed_01_small_01b",
+            ["stage-c"] = "bkr_prop_weed_01_small_01a",
+            ["stage-d"] = "bkr_prop_weed_med_01b",
+            ["stage-e"] = "bkr_prop_weed_lrg_01a",
+            ["stage-f"] = "bkr_prop_weed_lrg_01b",
+            ["stage-g"] = "bkr_prop_weed_lrg_01b",
+            ["stage-h"] = "bkr_prop_weed_lrg_01b",
+            ["stage-i"] = "bkr_prop_weed_lrg_01b",
+        },
+        ["highestStage"] = "stage-i"
     },
 }
 

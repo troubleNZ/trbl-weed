@@ -16,6 +16,23 @@ QBCore.Functions.CreateCallback('qb-weed:server:getBuildingPlants', function(_, 
     end)
 end)
 
+QBCore.Functions.CreateCallback('trbl-weed:server:getCitizenPlants', function(_, cb, citizenid)
+    local outdoorPlants = {}
+
+    MySQL.query('SELECT * FROM outdoor_plants WHERE citizenid = ?', {citizenid}, function(plants)
+        for i = 1, #plants, 1 do
+            outdoorPlants[#outdoorPlants+1] = plants[i]
+        end
+
+        if outdoorPlants ~= nil then
+            cb(outdoorPlants)
+        else
+            cb(nil)
+        end
+    end)
+end)
+
+
 RegisterNetEvent('qb-weed:server:placePlant', function(coords, sort, currentHouse)
     local random = math.random(1, 2)
     local gender
@@ -104,6 +121,49 @@ CreateThread(function()
     end
 end)
 
+
+CreateThread(function()     -- outdoors
+    while true do
+        local outdoorPlants = MySQL.query.await('SELECT * FROM outdoor_plants', {})
+        for k, _ in pairs(outdoorPlants) do
+            if outdoorPlants[k].health > 50 then
+                local Grow = math.random(1, 3)
+                if outdoorPlants[k].progress + Grow < 100 then
+                    MySQL.update('UPDATE outdoor_plants SET progress = ? WHERE plantid = ?',
+                        {(outdoorPlants[k].progress + Grow), outdoorPlants[k].plantid})
+                elseif outdoorPlants[k].progress + Grow >= 100 then
+                    if outdoorPlants[k].stage ~= QBWeed.Plants[outdoorPlants[k].sort]["highestStage"] then
+                        if outdoorPlants[k].stage == "stage-a" then
+                            MySQL.update('UPDATE outdoor_plants SET stage = ? WHERE plantid = ?',
+                                {'stage-b', outdoorPlants[k].plantid})
+                        elseif outdoorPlants[k].stage == "stage-b" then
+                            MySQL.update('UPDATE outdoor_plants SET stage = ? WHERE plantid = ?',
+                                {'stage-c', outdoorPlants[k].plantid})
+                        elseif outdoorPlants[k].stage == "stage-c" then
+                            MySQL.update('UPDATE outdoor_plants SET stage = ? WHERE plantid = ?',
+                                {'stage-d', outdoorPlants[k].plantid})
+                        elseif outdoorPlants[k].stage == "stage-d" then
+                            MySQL.update('UPDATE outdoor_plants SET stage = ? WHERE plantid = ?',
+                                {'stage-e', outdoorPlants[k].plantid})
+                        elseif outdoorPlants[k].stage == "stage-e" then
+                            MySQL.update('UPDATE outdoor_plants SET stage = ? WHERE plantid = ?',
+                                {'stage-f', outdoorPlants[k].plantid})
+                        elseif outdoorPlants[k].stage == "stage-f" then
+                            MySQL.update('UPDATE outdoor_plants SET stage = ? WHERE plantid = ?',
+                                {'stage-g', outdoorPlants[k].plantid})
+                        end
+                        MySQL.update('UPDATE outdoor_plants SET progress = ? WHERE plantid = ?',
+                            {0, outdoorPlants[k].plantid})
+                    end
+                end
+            end
+        end
+        TriggerClientEvent('trbl-weed:client:refreshOutdoorPlantStats', -1)
+        Wait((60 * 1000) * 9.6)
+    end
+end)
+
+
 QBCore.Functions.CreateUseableItem("weed_white-widow_seed", function(source, item)
     TriggerClientEvent('qb-weed:client:placePlant', source, 'white-widow', item)
 end)
@@ -128,6 +188,10 @@ QBCore.Functions.CreateUseableItem("weed_ak47_seed", function(source, item)
     TriggerClientEvent('qb-weed:client:placePlant', source, 'ak47', item)
 end)
 
+QBCore.Functions.CreateUseableItem("weed_high-yield_seed", function(source, item)
+    TriggerClientEvent('trbl-weed:client:place-HYH-Plant', source, 'high-yield', item)
+end)
+
 QBCore.Functions.CreateUseableItem("weed_nutrition", function(source, item)
     TriggerClientEvent('qb-weed:client:foodPlant', source, item)
 end)
@@ -150,7 +214,12 @@ RegisterNetEvent('qb-weed:server:harvestPlant', function(house, amount, plantNam
                 local result = MySQL.query.await(
                     'SELECT * FROM house_plants WHERE plantid = ? AND building = ?', {plantId, house})
                 if result[1] ~= nil then
-                    Player.Functions.AddItem('weed_' .. plantName .. '_seed', amount)
+                    local chance_ = math.random(1,100)
+                    if chance_ <= 10 then
+                        Player.Functions.AddItem('weed_' .. high-yield .. '_seed', 1)
+                    else
+                        Player.Functions.AddItem('weed_' .. plantName .. '_seed', amount)
+                    end
                     Player.Functions.AddItem('weed_' .. plantName, sndAmount)
                     Player.Functions.RemoveItem('empty_weed_bag', sndAmount)
                     MySQL.query('DELETE FROM house_plants WHERE plantid = ? AND building = ?',
@@ -189,4 +258,72 @@ RegisterNetEvent('qb-weed:server:foodPlant', function(house, amount, plantName, 
     end
     Player.Functions.RemoveItem('weed_nutrition', 1)
     TriggerClientEvent('qb-weed:client:refreshHousePlants', -1, house)
+end)
+
+RegisterNetEvent('trbl-weed:server:food-HYH-Plant', function(cid, amount, plantName, plantId)
+    local src = source
+    local Player = QBCore.Functions.GetPlayer(src)
+    local plantStats = MySQL.query.await(
+        'SELECT * FROM outdoor_plants WHERE citizenid = ? AND sort = ? AND plantid = ?',
+        {cid, plantName, tostring(plantId)})
+    TriggerClientEvent('QBCore:Notify', src,
+        QBWeed.Plants[plantName]["label"] .. ' | Nutrition: ' .. plantStats[1].food .. '% + ' .. amount .. '% (' ..
+            (plantStats[1].food + amount) .. '%)', 'success', 3500)
+    if plantStats[1].food + amount > 100 then
+        MySQL.update('UPDATE outdoor_plants SET food = ? WHERE citizenid = ? AND plantid = ?',
+            {100, cid, plantId})
+    else
+        MySQL.update('UPDATE outdoor_plants SET food = ? WHERE citizenid = ? AND plantid = ?',
+            {(plantStats[1].food + amount), cid, plantId})
+    end
+    Player.Functions.RemoveItem('weed_nutrition', 1)
+    TriggerClientEvent('trbl-weed:client:refreshOutDoorPlants', -1, cid)
+end)
+
+
+RegisterNetEvent('trbl-weed:server:place-HYH-Plant', function(coords, sort, cid)
+    local random = math.random(1, 2)
+    local gender
+    if random == 1 then
+        gender = "man"
+    else
+        gender = "woman"
+    end
+    MySQL.insert('INSERT INTO outdoor_plants (citizenid, coords, gender, sort, plantid) VALUES (?, ?, ?, ?, ?)',
+        {cid, coords, gender, sort, math.random(111111, 999999)})
+    TriggerClientEvent('trbl-weed:client:refreshOutDoorPlants', -1, cid)
+end)
+
+RegisterNetEvent('trbl-weed:server:harvest-HYH-Plant', function(cid, amount, plantName, plantId)
+    local src = source
+    local Player = QBCore.Functions.GetPlayer(src)
+    --local playercid = Player.PlayerData.citizenid
+    local weedBag = Player.Functions.GetItemByName('empty_weed_bag')
+    local sndAmount = math.random(2, 3)
+
+    if weedBag ~= nil then
+        if weedBag.amount >= sndAmount then
+            if cid ~= nil then      -- make it only the player who planted it by changing to:    if cid ~= nil and cid == playercid then  
+                local result = MySQL.query.await(
+                    'SELECT * FROM outdoor_plants WHERE plantid = ? AND citizenid = ?', {plantId, cid})
+                if result[1] ~= nil then
+                    Player.Functions.AddItem('weed_' .. plantName .. '_seed', amount)
+                    Player.Functions.AddItem('brick_' .. plantName, sndAmount)
+                    Player.Functions.RemoveItem('empty_weed_bag', sndAmount)
+                    MySQL.query('DELETE FROM outdoor_plants WHERE plantid = ? AND citizenid = ?',
+                        {plantId, cid})
+                    TriggerClientEvent('QBCore:Notify', src,  Lang:t('text.the_plant_has_been_harvested'), 'success', 3500)
+                    TriggerClientEvent('qb-weed:client:refreshHousePlants', -1, house)
+                else
+                    TriggerClientEvent('QBCore:Notify', src, Lang:t('error.this_plant_no_longer_exists'), 'error', 3500)
+                end
+            else
+                TriggerClientEvent('QBCore:Notify', src, Lang:t('error.house_not_found'), 'error', 3500)
+            end
+        else
+            TriggerClientEvent('QBCore:Notify', src, Lang:t('error.you_dont_have_enough_resealable_bags'), 'error', 3500)
+        end
+    else
+        TriggerClientEvent('QBCore:Notify', src, Lang:t('error.you_Dont_have_enough_resealable_bags'), 'error', 3500)
+    end
 end)
