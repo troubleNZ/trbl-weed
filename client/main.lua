@@ -528,6 +528,7 @@ AddEventHandler('onResourceStart', function(resource)
         PlayerData = QBCore.Functions.GetPlayerData()
         isLoggedIn = true
     end
+    while PlayerData == nil do Wait(100) end
     TriggerEvent("trbl-weed:client:refreshOutDoorPlants", PlayerData.citizenid)
 end)
 
