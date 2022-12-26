@@ -51,6 +51,11 @@ RegisterNetEvent('qb-weed:server:removeDeathPlant', function(building, plantId)
     TriggerClientEvent('qb-weed:client:refreshHousePlants', -1, building)
 end)
 
+RegisterNetEvent('qb-weed:server:removeDeathOutdoorPlant', function(citizenid, plantId)
+    MySQL.query('DELETE FROM outdoor_plants WHERE plantid = ? AND citizenid = ?', {plantId, citizenid})
+    TriggerClientEvent('qb-weed:client:refreshHousePlants', -1, citizenid)
+end)
+
 CreateThread(function()
     while true do
         local housePlants = MySQL.query.await('SELECT * FROM house_plants', {})

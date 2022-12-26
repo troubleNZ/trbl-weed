@@ -5,6 +5,7 @@ local insideHouse = false
 local currentHouse = nil
 local citizenid = nil
 local plantSpawned = false
+local outsideplantSpawned = false
 local isLoggedIn
 --local PlayerData = QBCore.Functions.GetPlayerData()
 
@@ -170,7 +171,106 @@ CreateThread(function()
     end
 end)
 
+CreateThread(function()     -- outdoor plant loop
+    while true do
+        Wait(0)
+        local result = QBCore.Functions.HasItem('gardengloves')
+        if result then
 
+            if outsideplantSpawned then
+                local ped = PlayerPedId()
+                for k, _ in pairs(outdoorPlants[citizenid]) do
+                    local gender = "M"
+                    if outdoorPlants[citizenid][k].gender == "woman" then gender = "F" end
+
+                    local plantData = {
+                        ["plantCoords"] = {["x"] = json.decode(outdoorPlants[citizenid][k].coords).x, ["y"] = json.decode(outdoorPlants[citizenid][k].coords).y, ["z"] = json.decode(outdoorPlants[citizenid][k].coords).z},
+                        ["plantStage"] = outdoorPlants[citizenid][k].stage,
+                        ["plantProp"] = GetHashKey(QBWeed.Plants[outdoorPlants[citizenid][k].sort]["stages"][outdoorPlants[citizenid][k].stage]),
+                        ["plantSort"] = {
+                            ["name"] = outdoorPlants[citizenid][k].sort,
+                            ["label"] = QBWeed.Plants[outdoorPlants[citizenid][k].sort]["label"],
+                        },
+                        ["plantStats"] = {
+                            ["food"] = outdoorPlants[citizenid][k].food,
+                            ["health"] = outdoorPlants[citizenid][k].health,
+                            ["progress"] = outdoorPlants[citizenid][k].progress,
+                            ["stage"] = outdoorPlants[citizenid][k].stage,
+                            ["highestStage"] = QBWeed.Plants[outdoorPlants[citizenid][k].sort]["highestStage"],
+                            ["gender"] = gender,
+                            ["plantId"] = outdoorPlants[citizenid][k].plantid,
+                        }
+                    }
+
+                    local plyDistance = #(GetEntityCoords(ped) - vector3(plantData["plantCoords"]["x"], plantData["plantCoords"]["y"], plantData["plantCoords"]["z"]))
+
+                    if plyDistance < 0.8 then
+
+                        ClosestTarget = k
+                        if plantData["plantStats"]["health"] > 0 then
+                            if plantData["plantStage"] ~= plantData["plantStats"]["highestStage"] then
+                                DrawText3Ds(plantData["plantCoords"]["x"], plantData["plantCoords"]["y"], plantData["plantCoords"]["z"],  Lang:t('text.sort') .. plantData["plantSort"]["label"]..'~w~ ['..plantData["plantStats"]["gender"]..'] | '..Lang:t('text.nutrition')..' ~b~'..plantData["plantStats"]["food"]..'% ~w~ | '..Lang:t('text.health')..' ~b~'..plantData["plantStats"]["health"]..'%')
+                            else
+                                DrawText3Ds(plantData["plantCoords"]["x"], plantData["plantCoords"]["y"], plantData["plantCoords"]["z"] + 0.2, Lang:t('text.harvest_plant'))
+                                DrawText3Ds(plantData["plantCoords"]["x"], plantData["plantCoords"]["y"], plantData["plantCoords"]["z"],  Lang:t('text.sort')..' ~g~'..plantData["plantSort"]["label"]..'~w~ ['..plantData["plantStats"]["gender"]..'] | '..Lang:t('text.nutrition')..' ~b~'..plantData["plantStats"]["food"]..'% ~w~ | '..Lang:t('text.health')..' ~b~'..plantData["plantStats"]["health"]..'%')
+                                if IsControlJustPressed(0, 38) then
+                                    QBCore.Functions.Progressbar("remove_weed_plant", Lang:t('text.harvesting_plant'), 8000, false, true, {
+                                        disableMovement = true,
+                                        disableCarMovement = true,
+                                        disableMouse = false,
+                                        disableCombat = true,
+                                    }, {
+                                        animDict = "amb@world_human_gardener_plant@male@base",
+                                        anim = "base",
+                                        flags = 16,
+                                    }, {}, {}, function() -- Done
+                                        ClearPedTasks(ped)
+                                        local amount = math.random(1, 6)
+                                        if plantData["plantStats"]["gender"] == "M" then
+                                            amount = math.random(1, 2)
+                                        end
+                                        TriggerServerEvent('trbl-weed:server:harvest-HYH-Plant', citizenid, amount, plantData["plantSort"]["name"], plantData["plantStats"]["plantId"])
+                                    end, function() -- Cancel
+                                        ClearPedTasks(ped)
+                                        QBCore.Functions.Notify("Process Canceled", "error")
+                                    end)
+                                end
+                            end
+                        elseif plantData["plantStats"]["health"] == 0 then
+                            DrawText3Ds(plantData["plantCoords"]["x"], plantData["plantCoords"]["y"], plantData["plantCoords"]["z"], Lang:t('error.plant_has_died'))
+                            if IsControlJustPressed(0, 38) then
+                                QBCore.Functions.Progressbar("remove_weed_plant", Lang:t('text.removing_the_plant'), 8000, false, true, {
+                                    disableMovement = true,
+                                    disableCarMovement = true,
+                                    disableMouse = false,
+                                    disableCombat = true,
+                                }, {
+                                    animDict = "amb@world_human_gardener_plant@male@base",
+                                    anim = "base",
+                                    flags = 16,
+                                }, {}, {}, function() -- Done
+                                    ClearPedTasks(ped)
+                                    TriggerServerEvent('qb-weed:server:removeDeathPlant', citizenid, plantData["plantStats"]["plantId"])
+                                end, function() -- Cancel
+                                    ClearPedTasks(ped)
+                                    QBCore.Functions.Notify( Lang:t('error.process_canceled'), "error")
+                                end)
+                            end
+                        end
+                    end
+                end
+            end
+
+
+        end
+
+
+    end
+
+    if not result then
+        Wait(5000)
+    end
+end)
 
 RegisterNetEvent('qb-weed:client:refreshHousePlants', function(house)
     if currentHouse ~= nil and currentHouse == house then
@@ -309,7 +409,71 @@ end)
 
 -- #trbl events
 
+RegisterNetEvent('trbl-weed:client:logOut', function()
+    despawnOutDoorPlants()
+    SetTimeout(1000, function()
+        if currentHouse ~= nil then
+            insideHouse = false
+            outdoorPlants[citizenid] = nil
+            citizenid = nil
+        end
+    end)
+end)
 
+RegisterNetEvent('trbl-weed:client:getOutDoorPlants', function(cid)
+    QBCore.Functions.TriggerCallback('trbl-weed:server:getCitizenPlants', function(plants)
+        citizenid = cid
+        outdoorplants[citizenid] = plants
+        spawnOutDoorPlants()
+    end, cid)
+end)
+
+RegisterNetEvent('trbl-weed:client:place-HYH-Plant', function(type, item)
+    local ped = PlayerPedId()
+    local Player = QBCore.Functions.GetPlayerData()
+    local cid = Player.citizenid
+    local plyCoords = GetOffsetFromEntityInWorldCoords(ped, 0, 0.75, 0)
+    local plantData = {
+        ["plantCoords"] = {["x"] = plyCoords.x, ["y"] = plyCoords.y, ["z"] = plyCoords.z},
+        ["plantModel"] = QBWeed.Plants[type]["stages"]["stage-a"],
+        ["plantLabel"] = QBWeed.Plants[type]["label"]
+    }
+    local ClosestPlant = 0
+    for _, v in pairs(QBWeed.Props) do
+        if ClosestPlant == 0 then
+            ClosestPlant = GetClosestObjectOfType(plyCoords.x, plyCoords.y, plyCoords.z, 0.8, GetHashKey(v), false, false, false)
+        end
+    end
+
+    --if currentHouse ~= nil then
+        if ClosestPlant == 0 then
+	        LocalPlayer.state:set("inv_busy", true, true)
+            QBCore.Functions.Progressbar("plant_weed_plant", Lang:t('text.planting'), 8000, false, true, {
+                disableMovement = true,
+                disableCarMovement = true,
+                disableMouse = false,
+                disableCombat = true,
+            }, {
+                animDict = "amb@world_human_gardener_plant@male@base",
+                anim = "base",
+                flags = 16,
+		        LocalPlayer.state:set("inv_busy", false, true)
+            }, {}, {}, function() -- Done
+                ClearPedTasks(ped)
+                TriggerServerEvent('trbl-weed:server:place-HYH-Plant', json.encode(plantData["plantCoords"]), type, cid)
+                TriggerServerEvent('qb-weed:server:removeSeed', item.slot, type)
+            end, function() -- Cancel
+                ClearPedTasks(ped)
+                QBCore.Functions.Notify(Lang:t('error.process_canceled'), "error")
+		        LocalPlayer.state:set("inv_busy", false, true)
+            end)
+        else
+            QBCore.Functions.Notify(Lang:t('error.cant_place_here'), 'error', 3500)
+        end
+    --else
+    --    QBCore.Functions.Notify(Lang:t('error.not_safe_here'), 'error', 3500)
+    --end
+end)
 
 RegisterNetEvent('trbl-weed:client:refreshOutDoorPlants', function(cid)
     local PlayerData = QBCore.Functions.GetPlayerData()
@@ -338,131 +502,6 @@ RegisterNetEvent('trbl-weed:client:refreshOutdoorPlantStats', function()
     end
 end)
 
-RegisterNetEvent('trbl-weed:client:getOutDoorPlants', function(cid)
-    QBCore.Functions.TriggerCallback('trbl-weed:server:getCitizenPlants', function(plants)
-        citizenid = cid
-        outdoorplants[citizenid] = plants
-        spawnOutDoorPlants()
-    end, cid)
-end)
-
-RegisterNetEvent('trbl-weed:client:place-HYH-Plant', function(type, item)
-    local ped = PlayerPedId()
-    local Player = QBCore.Functions.GetPlayerData()
-    local cid = Player.citizenid
-    local plyCoords = GetOffsetFromEntityInWorldCoords(ped, 0, 0.75, 0)
-    local plantData = {
-        ["plantCoords"] = {["x"] = plyCoords.x, ["y"] = plyCoords.y, ["z"] = plyCoords.z},
-        ["plantModel"] = QBWeed.Plants[type]["stages"]["stage-a"],
-        ["plantLabel"] = QBWeed.Plants[type]["label"]
-    }
-    local ClosestPlant = 0
-    for _, v in pairs(QBWeed.Props) do
-        if ClosestPlant == 0 then
-            ClosestPlant = GetClosestObjectOfType(plyCoords.x, plyCoords.y, plyCoords.z, 0.8, GetHashKey(v), false, false, false)
-        end
-    end
-
-    if QBWeed.AllowHighYieldOutdoorGrows then
-        if not insideHouse then
-            if ClosestPlant == 0 then
-                LocalPlayer.state:set("inv_busy", true, true)
-                QBCore.Functions.Progressbar("plant_weed_plant", Lang:t('text.planting'), 8000, false, true, {
-                    disableMovement = true,
-                    disableCarMovement = true,
-                    disableMouse = false,
-                    disableCombat = true,
-                }, {
-                    animDict = "amb@world_human_gardener_plant@male@base",
-                    anim = "base",
-                    flags = 16,
-                    LocalPlayer.state:set("inv_busy", false, true)
-                }, {}, {}, function() -- Done
-                    ClearPedTasks(ped)
-                    TriggerServerEvent('trbl-weed:server:place-HYH-Plant', json.encode(plantData["plantCoords"]), type, cid)
-                    TriggerServerEvent('qb-weed:server:removeSeed', item.slot, type)
-                end, function() -- Cancel
-                    ClearPedTasks(ped)
-                    QBCore.Functions.Notify(Lang:t('error.process_canceled'), "error")
-                    LocalPlayer.state:set("inv_busy", false, true)
-                end)
-            else
-                QBCore.Functions.Notify(Lang:t('error.cant_place_here'), 'error', 3500)
-            end
-        else
-            QBCore.Functions.Notify(Lang:t('error.not_safe_here'), 'error', 3500)
-        end
-    else
-        QBCore.Functions.Notify(Lang:t('error.cant_place_here'), 'error', 3500)
-    end
-end)
-
-RegisterNetEvent('trbl-weed:client:food-HYH-Plant', function()
-    if isLoggedIn ~= nil then
-        if ClosestTarget ~= 0 then
-            local ped = PlayerPedId()
-            local gender = "M"
-            if outdoorplants[citizenid][ClosestTarget].gender == "woman" then
-                gender = "F"
-            end
-
-            local plantData = {
-                ["plantCoords"] = {["x"] = json.decode(outdoorplants[citizenid][ClosestTarget].coords).x, ["y"] = json.decode(outdoorplants[citizenid][ClosestTarget].coords).y, ["z"] = json.decode(outdoorplants[citizenid][ClosestTarget].coords).z},
-                ["plantStage"] = outdoorplants[citizenid][ClosestTarget].stage,
-                ["plantProp"] = GetHashKey(QBWeed.Plants[outdoorplants[citizenid][ClosestTarget].sort]["stages"][outdoorplants[citizenid][ClosestTarget].stage]),
-                ["plantSort"] = {
-                    ["name"] = outdoorplants[citizenid][ClosestTarget].sort,
-                    ["label"] = QBWeed.Plants[outdoorplants[citizenid][ClosestTarget].sort]["label"],
-                },
-                ["plantStats"] = {
-                    ["food"] = outdoorplants[citizenid][ClosestTarget].food,
-                    ["health"] = outdoorplants[citizenid][ClosestTarget].health,
-                    ["progress"] = outdoorplants[citizenid][ClosestTarget].progress,
-                    ["stage"] = outdoorplants[citizenid][ClosestTarget].stage,
-                    ["highestStage"] = QBWeed.Plants[outdoorplants[citizenid][ClosestTarget].sort]["highestStage"],
-                    ["gender"] = gender,
-                    ["plantId"] = outdoorplants[citizenid][ClosestTarget].plantid,
-                }
-            }
-            local plyDistance = #(GetEntityCoords(ped) - vector3(plantData["plantCoords"]["x"], plantData["plantCoords"]["y"], plantData["plantCoords"]["z"]))
-
-            if plyDistance < 1.0 then
-                if plantData["plantStats"]["food"] == 100 then
-                    QBCore.Functions.Notify(Lang:t('error.not_need_nutrition'), 'error', 3500)
-                else
-		            LocalPlayer.state:set("inv_busy", true, true)
-                    QBCore.Functions.Progressbar("plant_weed_plant", Lang:t('text.feeding_plant'), math.random(4000, 8000), false, true, {
-                        disableMovement = true,
-                        disableCarMovement = true,
-                        disableMouse = false,
-                        disableCombat = true,
-                    }, {
-                        animDict = "timetable@gardener@filling_can",
-                        anim = "gar_ig_5_filling_can",
-                        flags = 16,
-
-                        LocalPlayer.state:set("inv_busy", false, true)
-                    }, {}, {}, function() -- Done
-                        ClearPedTasks(ped)
-                        local newFood = math.random(40, 60)
-                        TriggerServerEvent('trbl-weed:server:food-HYH-Plant', citizenid, newFood, plantData["plantSort"]["name"], plantData["plantStats"]["plantId"])
-                    end, function() -- Cancel
-                        ClearPedTasks(ped)
-			            LocalPlayer.state:set("inv_busy", false, true)
-                        QBCore.Functions.Notify(Lang:t('error.process_canceled'), "error")
-                    end)
-                end
-            else
-                QBCore.Functions.Notify(Lang:t('error.cant_place_here'), "error")
-            end
-        else
-            QBCore.Functions.Notify(Lang:t('error.cant_place_here'), "error")
-        end
-    end
-end)
-
-
-
 --  #trbl functions
 
 function despawnOutDoorPlants()
@@ -487,7 +526,7 @@ end
 
 function spawnOutDoorPlants()
     CreateThread(function()
-        if not plantSpawned then
+        if not outsideplantSpawned then
             for k, _ in pairs(outdoorPlants[citizenid]) do
                 local plantData = {
                     ["plantCoords"] = {["x"] = json.decode(outdoorPlants[citizenid][k].coords).x, ["y"] = json.decode(outdoorPlants[citizenid][k].coords).y, ["z"] = json.decode(outdoorPlants[citizenid][k].coords).z},
@@ -496,12 +535,13 @@ function spawnOutDoorPlants()
 
                 local plantProp = CreateObject(plantData["plantProp"], plantData["plantCoords"]["x"], plantData["plantCoords"]["y"], plantData["plantCoords"]["z"], false, false, false)
                 while not plantProp do Wait(0) end
-                PlaceObjectOnGroundProperly(plantProp)
+                --PlaceObjectOnGroundProperly(plantProp)
                 Wait(10)
                 FreezeEntityPosition(plantProp, true)
+                SetEntityCoords(plantProp, plantData["plantCoords"]["x"], plantData["plantCoords"]["y"], plantData["plantCoords"]["z"], false,false,false,false)
                 SetEntityAsMissionEntity(plantProp, false, false)
             end
-            plantSpawned = true
+            outsideplantSpawned = true
         end
     end)
 end
@@ -522,25 +562,14 @@ AddEventHandler('QBCore:Client:OnPlayerUnload', function()
 end)
 
 AddEventHandler('onResourceStart', function(resource)
-
     if resource == GetCurrentResourceName() then
         Wait(200)
-        PlayerData = QBCore.Functions.GetPlayerData()
+        local PlayerData = QBCore.Functions.GetPlayerData()
         isLoggedIn = true
     end
-    while PlayerData == nil do Wait(100) end
+    while not PlayerData do
+    Wait(100)
+    end
     TriggerEvent("trbl-weed:client:refreshOutDoorPlants", PlayerData.citizenid)
-end)
-
-RegisterNetEvent('trbl-weed:client:logOut', function()
-    despawnOutDoorPlants()
-    SetTimeout(1000, function()
-        if isLoggedIn ~= nil then
-            insideHouse = nil
-            outdoorPlants[citizenid] = nil
-            citizenid = nil
-            isLoggedIn = false
-        end
-    end)
-end)
+  end)
   
